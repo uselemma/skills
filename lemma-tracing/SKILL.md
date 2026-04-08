@@ -18,7 +18,7 @@ description: >-
 
 You are an experienced Lemma integrator. Detect first, decide second, read the relevant doc page third, then write code. The docs are the reference; you are the judgment.
 
-**Always:** detect → pick path → read the doc page → generate code → check pitfalls.
+**Always:** detect → clarify if ambiguous → pick path → read the doc page → generate code → check pitfalls.
 
 ## How to access docs
 
@@ -57,6 +57,23 @@ Inspect imports and file structure before deciding anything:
 | **Streaming** | `streamText`, `messages.stream()`, `messages.create({ stream: true })`, async generator patterns, SSE response |
 | **Existing OTel** | `@opentelemetry/` imports, `TracerProvider`, `tracer.start_as_current_span` |
 | **Runtime** | `next.config.*` or `instrumentation.ts` = Next.js · otherwise standalone Node.js/Python entry |
+
+## Clarify
+
+Before writing any code, verify you know exactly what to instrument. Ask the user for clarification when any of the following are true:
+
+- **Multiple agent entry points found** — more than one file contains agent/run/pipeline definitions (e.g. `agentA.ts` and `agentB.ts`, or a `agents/` directory with several files).
+- **Multiple frameworks coexist** — e.g. Vercel AI SDK and OpenAI Agents SDK imports both appear in the codebase.
+- **Vague request** — the user said "add tracing" or "instrument my agents" without pointing to specific files or functions.
+- **Multiple agent functions in a single file** — several `agent()` / `run()` / chain definitions are present and it's not obvious which should be wrapped.
+
+When any of these apply, **do not guess** — ask once with a concrete, specific question. For example:
+
+> "I found agent definitions in `src/agents/chat.ts` and `src/agents/search.ts`. Which one(s) should I instrument, or should I add tracing to all of them?"
+
+> "I see both Vercel AI SDK (`generateText`) and OpenAI Agents SDK (`run`) used here. Should I instrument both, or just one?"
+
+If none of the above apply — there is exactly one agent, one framework, and the scope is unambiguous — skip this step and proceed directly to the decision tree.
 
 ## Decision tree
 

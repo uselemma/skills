@@ -11,7 +11,7 @@ Use this reference only when the app uses Vercel AI SDK in Next.js.
 
 Docs:
 - `https://docs.uselemma.ai/tracing/using-a-supported-framework.md`
-- `https://docs.uselemma.ai/tracing/patterns/otlp-export.md`
+- `https://docs.uselemma.ai/tracing/otlp-export.md`
 - `https://docs.uselemma.ai/tracing/patterns/dual-export.md`
 - `https://langfuse.com/integrations/frameworks/vercel-ai-sdk`
 
@@ -47,10 +47,12 @@ npm install @langfuse/otel @opentelemetry/exporter-trace-otlp-proto @opentelemet
 Set env vars:
 
 ```bash
-LEMMA_OTLP_TRACES_URL=...
+LEMMA_BASE_URL=https://api.uselemma.ai/otel/v1/traces
 LEMMA_API_KEY=...
 LEMMA_PROJECT_ID=...
 ```
+
+`LEMMA_BASE_URL` is the full Lemma OTLP traces endpoint, not just the API origin.
 
 In root `instrumentation.ts` or `src/instrumentation.ts`:
 
@@ -69,7 +71,7 @@ export async function register() {
       spanProcessors: [
         new LangfuseSpanProcessor({
           exporter: new OTLPTraceExporter({
-            url: process.env.LEMMA_OTLP_TRACES_URL,
+            url: process.env.LEMMA_BASE_URL,
             headers: {
               Authorization: `Bearer ${process.env.LEMMA_API_KEY}`,
               "X-Lemma-Project-ID": process.env.LEMMA_PROJECT_ID,
@@ -112,7 +114,7 @@ export async function register() {
     );
 
     const lemmaExporter = new OTLPTraceExporter({
-      url: process.env.LEMMA_OTLP_TRACES_URL,
+      url: process.env.LEMMA_BASE_URL,
       headers: {
         Authorization: `Bearer ${process.env.LEMMA_API_KEY}`,
         "X-Lemma-Project-ID": process.env.LEMMA_PROJECT_ID,

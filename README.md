@@ -6,7 +6,7 @@
 
 | Skill | Description |
 |---|---|
-| [`lemma-tracing`](./lemma-tracing/SKILL.md) | Integrate Lemma tracing into any codebase — detects existing OpenTelemetry instrumentation, adds Langfuse instrumentation when needed, and configures OTLP export to Lemma |
+| [`lemma-tracing`](./lemma-tracing/SKILL.md) | Integrate Lemma tracing into any codebase — detects existing OpenTelemetry instrumentation, adds Langfuse instrumentation when needed, and configures OpenTelemetry export to Lemma |
 
 ## Installation
 

@@ -5,7 +5,7 @@ last_updated: 2026-05-06
 description: >-
   Integrate Lemma AI observability tracing into a codebase. Use when adding
   Lemma tracing, routing OpenTelemetry spans to Lemma, configuring Langfuse
-  instrumentation with Lemma OTLP export, fixing missing traces, adding
+  instrumentation with Lemma OpenTelemetry export, fixing missing traces, adding
   conversation thread metadata, or debugging Lemma span export.
 ---
 
@@ -30,7 +30,7 @@ Follow this sequence for every integration:
 4. **Present a concise plan and ask for confirmation before editing.**
    Include the detected path, files to change, dependencies, required env vars, and verification steps. Do not edit code until the user approves, unless they explicitly asked you to proceed without confirmation.
 5. **Proceed with the remainder.**
-   Configure Lemma OTLP export, add Lemma metadata such as `lemma.thread_id` when relevant, and verify traces.
+   Configure Lemma OpenTelemetry export, add Lemma metadata such as `lemma.thread_id` when relevant, and verify traces.
 
 ## Docs
 
@@ -42,7 +42,7 @@ Use docs in this order:
 2. Read the most relevant page before editing:
    - Greenfield or Langfuse processing: `https://docs.uselemma.ai/integrations/langfuse.md`
    - Existing framework support: `https://docs.uselemma.ai/tracing/using-a-supported-framework.md`
-   - Existing OTel pipeline or direct export: `https://docs.uselemma.ai/tracing/patterns/otlp-export.md`
+   - Existing OTel pipeline or direct export: `https://docs.uselemma.ai/tracing/otlp-export.md`
    - Multiple destinations: `https://docs.uselemma.ai/tracing/patterns/dual-export.md`
    - OpenInference: `https://docs.uselemma.ai/integrations/openinference.md`
    - Troubleshooting: `https://docs.uselemma.ai/tracing/troubleshooting/common-problems.md`
@@ -70,8 +70,10 @@ Before editing code, show the user a plan with:
 - **Detected path:** already-instrumented OTel vs. needs Langfuse instrumentation.
 - **Files:** startup instrumentation files and agent/model call sites to change.
 - **Dependencies:** packages to add or keep.
-- **Environment:** `LEMMA_OTLP_TRACES_URL`, `LEMMA_API_KEY`, `LEMMA_PROJECT_ID`.
+- **Environment:** `LEMMA_BASE_URL` (`https://api.uselemma.ai/otel/v1/traces`), `LEMMA_API_KEY`, `LEMMA_PROJECT_ID`.
 - **Verification:** type check, smoke trace, logs, and any manual dashboard check.
+
+`LEMMA_BASE_URL` is the full Lemma OTLP traces endpoint, not just the API origin. Use `https://api.uselemma.ai/otel/v1/traces`.
 
 Then ask for confirmation and wait.
 
@@ -87,7 +89,7 @@ TypeScript exporters should use protobuf:
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
 
 const lemmaExporter = new OTLPTraceExporter({
-  url: process.env.LEMMA_OTLP_TRACES_URL,
+  url: process.env.LEMMA_BASE_URL,
   headers: {
     Authorization: `Bearer ${process.env.LEMMA_API_KEY}`,
     "X-Lemma-Project-ID": process.env.LEMMA_PROJECT_ID,
@@ -99,7 +101,7 @@ Python exporters should use `opentelemetry.exporter.otlp.proto.http.trace_export
 
 ### Not yet instrumented
 
-Use Langfuse as the instrumentation layer, then export the resulting spans to Lemma. For framework-specific apps, follow the matching Langfuse framework guide and then apply Lemma OTLP export:
+Use Langfuse as the instrumentation layer, then export the resulting spans to Lemma. For framework-specific apps, follow the matching Langfuse framework guide and then apply Lemma OpenTelemetry export:
 
 - Vercel AI SDK: Langfuse Vercel AI SDK guide plus `experimental_telemetry`.
 - OpenAI Agents SDK: Langfuse OpenAI Agents guide.
@@ -109,7 +111,7 @@ Use Langfuse as the instrumentation layer, then export the resulting spans to Le
 
 For Vercel AI SDK in Next.js, also read [references/vercel-ai-sdk.md](references/vercel-ai-sdk.md) for single-export and dual-export startup patterns.
 
-For TypeScript with `LangfuseSpanProcessor`, send to Lemma by passing a custom protobuf OTLP exporter:
+For TypeScript with `LangfuseSpanProcessor`, send to Lemma by passing a custom protobuf OpenTelemetry exporter:
 
 ```typescript
 import { LangfuseSpanProcessor } from "@langfuse/otel";
@@ -117,7 +119,7 @@ import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
 
 new LangfuseSpanProcessor({
   exporter: new OTLPTraceExporter({
-    url: process.env.LEMMA_OTLP_TRACES_URL,
+    url: process.env.LEMMA_BASE_URL,
     headers: {
       Authorization: `Bearer ${process.env.LEMMA_API_KEY}`,
       "X-Lemma-Project-ID": process.env.LEMMA_PROJECT_ID,
@@ -155,7 +157,7 @@ Use semantic convention keys for general metadata when possible: `user.id`, `ses
 
 - Register startup instrumentation before app code emits spans or provider clients are instantiated.
 - In Next.js, put startup registration in root `instrumentation.ts` or `src/instrumentation.ts` and guard Node-only SDK setup with `process.env.NEXT_RUNTIME === "nodejs"`.
-- Use `@opentelemetry/exporter-trace-otlp-proto` for TypeScript HTTP/protobuf export. A JSON OTLP exporter can produce "invalid protobuf payload" errors.
+- Use `@opentelemetry/exporter-trace-otlp-proto` for TypeScript HTTP/protobuf export. A JSON OpenTelemetry exporter can produce "invalid protobuf payload" errors.
 - Never expose `LEMMA_API_KEY` in client code or `NEXT_PUBLIC_*` env vars.
 - If another tracer provider already exists, add Lemma to it instead of replacing it.
 - For short-lived/serverless handlers, flush processors/exporters at request end when the runtime may freeze before batches export.
@@ -167,7 +169,7 @@ Before suggesting fixes, check in this order:
 1. **No traces:** startup instrumentation ran before traffic; Lemma env vars are set; egress to the OTLP endpoint works.
 2. **Traces in source backend but not Lemma:** Lemma exporter is attached; headers include `Authorization` and `X-Lemma-Project-ID`; runtime logs show no exporter errors.
 3. **Missing child spans:** framework/provider instrumentation is enabled and registered before clients are created.
-4. **Invalid payload:** TypeScript uses `@opentelemetry/exporter-trace-otlp-proto`, and `LEMMA_OTLP_TRACES_URL` points at the full Lemma OTLP traces endpoint.
+4. **Invalid payload:** TypeScript uses `@opentelemetry/exporter-trace-otlp-proto`, and `LEMMA_BASE_URL` is the full Lemma OTLP traces endpoint: `https://api.uselemma.ai/otel/v1/traces`.
 5. **Delayed data:** batch processor may need `forceFlush()` in short-lived runtimes.
 
 If Lemma MCP is connected, query recent traces directly before adding debug logs.

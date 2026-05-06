@@ -17,7 +17,7 @@ Offer to submit feedback when the user says things like:
 - "There's a new integration / feature you don't know about"
 - "I had to do X differently than what you described"
 
-Do **not** offer for general Lemma product questions or bugs in the SDK itself.
+Do **not** offer for general Lemma product questions or bugs in product libraries themselves.
 
 ---
 

@@ -6,7 +6,7 @@
 
 | Skill | Description |
 |---|---|
-| [`lemma-tracing`](./lemma-tracing/SKILL.md) | Integrate Lemma tracing into any codebase — detects language, framework, and existing OTel setup to pick the right integration path |
+| [`lemma-tracing`](./lemma-tracing/SKILL.md) | Integrate Lemma tracing into any codebase — detects existing OpenTelemetry instrumentation, adds Langfuse instrumentation when needed, and configures OTLP export to Lemma |
 
 ## Installation
 
@@ -41,9 +41,10 @@ npx skills add uselemma/skills --skill "lemma-tracing" --target claude
 Once installed, the agent will automatically use these skills when relevant — for example:
 
 - Adding Lemma tracing to a new or existing project
-- Choosing the right integration path (native SDK vs. OpenTelemetry)
+- Choosing the right path (keep existing OTel instrumentation or add Langfuse instrumentation)
+- Configuring Lemma as an OTLP trace export destination
 - Debugging instrumentation issues
 
 ## Versioning
 
-Skills are versioned alongside the Lemma SDK. When the SDK API changes, the skill is updated in the same PR so agents always generate up-to-date code.
+Skills are versioned alongside Lemma's tracing docs. When the recommended instrumentation or export path changes, the skill is updated in the same PR so agents generate up-to-date code.

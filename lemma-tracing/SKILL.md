@@ -1,187 +1,177 @@
 ---
 name: lemma-tracing
 version: 1.0.0
-sdk_version: ">=3.0.0"
 last_updated: 2026-05-06
 description: >-
-  Integrate Lemma AI observability tracing into a codebase. Detects the user's
-  language, framework, and existing OTel setup to pick the correct integration
-  path and generate working instrumentation code. Use when the user asks to add
-  Lemma tracing, fix missing traces, add tool call spans, track conversation
-  threads, handle streaming agents, add Lemma alongside existing Datadog/Jaeger
-  OTel, or add custom metadata to AI agent runs.
+  Integrate Lemma AI observability tracing into a codebase. Use when adding
+  Lemma tracing, routing OpenTelemetry spans to Lemma, configuring Langfuse
+  instrumentation with Lemma OTLP export, fixing missing traces, adding
+  conversation thread metadata, or debugging Lemma span export.
 ---
 
 # Lemma Tracing
 
 ## Philosophy
 
-You are an experienced Lemma integrator. Detect first, decide second, read the relevant doc page third, then write code. The docs are the reference; you are the judgment.
+You are an experienced Lemma integrator. Detect first, decide second, read the relevant docs third, present a plan fourth, then edit only after confirmation.
 
-**Always:** detect → clarify if ambiguous → pick path → read the doc page → present a plan → generate code → check pitfalls.
+**Always:** detect existing instrumentation -> choose path -> read docs -> present plan -> ask for confirmation -> implement -> verify.
 
-Prefer native framework integration over provider-level instrumentation or Langfuse-style wrapping. If the app uses Vercel AI SDK, OpenAI Agents SDK, LangChain, or another framework with its own telemetry/OTel integration, use that framework path first. Only add OpenInference or manual wrappers when there is no framework layer and the app calls the provider SDK directly.
+## Primary path
 
-## How to access docs
+Follow this sequence for every integration:
+
+1. **Check if the app is already instrumented with OpenTelemetry-compatible spans.**
+   Look for `@opentelemetry/*`, `TracerProvider`, `BatchSpanProcessor`, `OTLPTraceExporter`, OpenInference, Arize, Braintrust, Langfuse, AI SDK telemetry, or existing collector/exporter config.
+2. **If already instrumented, proceed with that instrumentation.**
+   Do not replace it. Add Lemma as an OTLP trace export destination on the existing provider, processor list, collector, or exporter pipeline.
+3. **If not already instrumented, instrument with Langfuse.**
+   Use Langfuse or a Langfuse-supported framework guide to create spans, then configure those spans to export to Lemma.
+4. **Present a concise plan and ask for confirmation before editing.**
+   Include the detected path, files to change, dependencies, required env vars, and verification steps. Do not edit code until the user approves, unless they explicitly asked you to proceed without confirmation.
+5. **Proceed with the remainder.**
+   Configure Lemma OTLP export, add Lemma metadata such as `lemma.thread_id` when relevant, and verify traces.
+
+## Docs
 
 Base URL: `https://docs.uselemma.ai`
 
-Use your available fetch/search tools (WebFetch, mcp_fetch, WebSearch, etc.) in this order:
+Use docs in this order:
 
-**1. Start with the index**
-
-Fetch the full list of every published doc page with titles and URLs:
-`https://docs.uselemma.ai/llms.txt`
-
-Use this to discover which page covers the topic, then fetch that page directly. Always prefer this over guessing a URL — the published set of pages changes as docs are updated.
-
-**2. Fetch individual pages as markdown**
-
-Append `.md` to any page URL from the index:
-`https://docs.uselemma.ai/integrations/vercel-ai-sdk.md`
-
-Read the relevant page before writing code. The decision tree below tells you which page to look for.
-
-**3. Search as a fallback**
-
-If you can't identify the right page from the index, use your available web search tools:
-`site:docs.uselemma.ai <query>`
+1. Fetch `https://docs.uselemma.ai/llms.txt` to discover current pages.
+2. Read the most relevant page before editing:
+   - Greenfield or Langfuse processing: `https://docs.uselemma.ai/integrations/langfuse.md`
+   - Existing framework support: `https://docs.uselemma.ai/tracing/using-a-supported-framework.md`
+   - Existing OTel pipeline or direct export: `https://docs.uselemma.ai/tracing/patterns/otlp-export.md`
+   - Multiple destinations: `https://docs.uselemma.ai/tracing/patterns/dual-export.md`
+   - OpenInference: `https://docs.uselemma.ai/integrations/openinference.md`
+   - Troubleshooting: `https://docs.uselemma.ai/tracing/troubleshooting/common-problems.md`
 
 ## Detect
 
-Inspect imports and file structure before deciding anything:
+Inspect imports, startup files, and framework calls before deciding anything:
 
 | Signal | How to detect |
 |---|---|
-| **Language** | `.ts`/`.js` = TypeScript · `.py` = Python |
-| **Framework** | `from 'ai'` = Vercel AI SDK · `from '@openai/agents'` = OpenAI Agents SDK · `from 'langchain'` or `from langchain` = LangChain |
-| **Provider** | `from 'openai'` = OpenAI · `from '@anthropic-ai/sdk'` = Anthropic · `import litellm` = LiteLLM |
-| **Streaming** | `streamText`, `messages.stream()`, `messages.create({ stream: true })`, async generator patterns, SSE response |
-| **Existing OTel** | `@opentelemetry/` imports, `TracerProvider`, `tracer.start_as_current_span` |
-| **Runtime** | `next.config.*` or `instrumentation.ts` = Next.js · otherwise standalone Node.js/Python entry |
+| Existing OTel | `@opentelemetry/*`, `TracerProvider`, `BatchSpanProcessor`, `OTLPTraceExporter`, collector env vars |
+| Existing Langfuse | `@langfuse/otel`, `@langfuse/tracing`, `LangfuseSpanProcessor`, `observe`, `startActiveObservation` |
+| Existing OpenInference | `openinference`, `@arizeai/openinference-*`, Arize/Phoenix instrumentation |
+| Vercel AI SDK | `generateText`, `streamText`, `generateObject`, `experimental_telemetry` from `ai` |
+| Provider SDK | `openai`, `@anthropic-ai/sdk`, `anthropic`, `litellm` |
+| Next.js runtime | root `instrumentation.ts` or `src/instrumentation.ts`, `NEXT_RUNTIME` guard |
+| Streaming | `streamText`, SSE handlers, async iterables, `ReadableStream` |
 
-## Clarify
+Ask a focused clarification question when there are multiple agent entry points, multiple telemetry stacks, or unclear runtime ownership.
 
-Before writing any code, verify you know exactly what to instrument. Ask the user for clarification when any of the following are true:
+## Plan requirement
 
-- **Multiple agent entry points found** — more than one file contains agent/run/pipeline definitions (e.g. `agentA.ts` and `agentB.ts`, or a `agents/` directory with several files).
-- **Multiple frameworks coexist** — e.g. Vercel AI SDK and OpenAI Agents SDK imports both appear in the codebase.
-- **Vague request** — the user said "add tracing" or "instrument my agents" without pointing to specific files or functions.
-- **Multiple agent functions in a single file** — several `agent()` / `run()` / chain definitions are present and it's not obvious which should be wrapped.
+Before editing code, show the user a plan with:
 
-When any of these apply, **do not guess** — ask once with a concrete, specific question. For example:
+- **Detected path:** already-instrumented OTel vs. needs Langfuse instrumentation.
+- **Files:** startup instrumentation files and agent/model call sites to change.
+- **Dependencies:** packages to add or keep.
+- **Environment:** `LEMMA_OTLP_TRACES_URL`, `LEMMA_API_KEY`, `LEMMA_PROJECT_ID`.
+- **Verification:** type check, smoke trace, logs, and any manual dashboard check.
 
-> "I found agent definitions in `src/agents/chat.ts` and `src/agents/search.ts`. Which one(s) should I instrument, or should I add tracing to all of them?"
+Then ask for confirmation and wait.
 
-> "I see both Vercel AI SDK (`generateText`) and OpenAI Agents SDK (`run`) used here. Should I instrument both, or just one?"
+## Implementation patterns
 
-If none of the above apply — there is exactly one agent, one framework, and the scope is unambiguous — skip this step and proceed directly to the decision tree.
+### Existing OpenTelemetry-compatible instrumentation
 
-## Present a plan before proceeding
+Keep the current instrumentation and add a Lemma OTLP trace exporter.
 
-Before writing or editing code, present a concise plan to the user. Include:
+TypeScript exporters should use protobuf:
 
-- The files or entry points you will instrument.
-- The detected framework/provider and why that integration path was selected.
-- Any docs or references you will follow.
-- Any user-visible tradeoffs, such as adding a new dependency or changing runtime initialization.
+```typescript
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
 
-Proceed after the user approves the plan, unless the user explicitly asked you to make the change without another confirmation.
+const lemmaExporter = new OTLPTraceExporter({
+  url: process.env.LEMMA_OTLP_TRACES_URL,
+  headers: {
+    Authorization: `Bearer ${process.env.LEMMA_API_KEY}`,
+    "X-Lemma-Project-ID": process.env.LEMMA_PROJECT_ID,
+  },
+});
+```
 
-## Decision tree
+Python exporters should use `opentelemetry.exporter.otlp.proto.http.trace_exporter.OTLPSpanExporter` with the same endpoint and headers.
 
-Check in this order — sequence matters.
+### Not yet instrumented
 
-**1. Existing OTel provider?**
+Use Langfuse as the instrumentation layer, then export the resulting spans to Lemma. For framework-specific apps, follow the matching Langfuse framework guide and then apply Lemma OTLP export:
 
-→ **YES:** Do not call `registerOTel()` — it replaces the global provider and discards all existing processors. Use `createLemmaSpanProcessor()` instead and add it to the existing provider.
-→ Read: `https://docs.uselemma.ai/tracing/patterns/dual-export.md`
-→ Recipe: `https://docs.uselemma.ai/recipes/dual-export.md`
+- Vercel AI SDK: Langfuse Vercel AI SDK guide plus `experimental_telemetry`.
+- OpenAI Agents SDK: Langfuse OpenAI Agents guide.
+- Claude Agent SDK JS/TS: Langfuse Claude Agent SDK guide.
+- LangChain/LangGraph: Langfuse framework guide.
+- Custom frameworks: Langfuse OpenTelemetry or native OpenTelemetry spans.
 
-**2. Framework or provider SDK detected?**
+For Vercel AI SDK in Next.js, also read [references/vercel-ai-sdk.md](references/vercel-ai-sdk.md) for single-export and dual-export startup patterns.
 
-→ Fetch `https://docs.uselemma.ai/llms.txt` and find the matching integration page (look for the detected framework or provider name in the titles).
-→ If a framework integration exists, use it before any provider-level or Langfuse-style instrumentation. Native framework spans avoid duplicate traces and preserve the app's existing AI SDK conventions.
-→ Read the integration page before writing code — it specifies the exact pattern (e.g. `registerOTel()` alone vs. `registerOTel()` + framework telemetry).
-→ Integration pages are split by language (TypeScript / Python) — check the right section for the detected language.
-→ If Vercel AI SDK detected: also read [references/vercel-ai-sdk.md](references/vercel-ai-sdk.md) before writing code.
-→ If OpenInference is needed (direct provider SDK, no framework): also read [references/openinference.md](references/openinference.md).
+For TypeScript with `LangfuseSpanProcessor`, send to Lemma by passing a custom protobuf OTLP exporter:
 
-**3. No matching integration page?**
+```typescript
+import { LangfuseSpanProcessor } from "@langfuse/otel";
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
 
-→ Manual instrumentation with `tool()`, `llm()`, `retrieval()`, `trace()` helpers.
-→ Read: `https://docs.uselemma.ai/tracing/manual-instrumentation.md`
-→ Recipe: `https://docs.uselemma.ai/recipes/manual-instrumentation.md`
-→ Also read [references/manual-instrumentation.md](references/manual-instrumentation.md) — non-obvious helper constraints (single input arg in TS, nesting rules, when not to use raw spans).
+new LangfuseSpanProcessor({
+  exporter: new OTLPTraceExporter({
+    url: process.env.LEMMA_OTLP_TRACES_URL,
+    headers: {
+      Authorization: `Bearer ${process.env.LEMMA_API_KEY}`,
+      "X-Lemma-Project-ID": process.env.LEMMA_PROJECT_ID,
+    },
+  }),
+});
+```
 
-**Then, on every path:**
+Use `LANGFUSE_*` variables only if Langfuse is also a storage destination. Lemma-only export requires only Lemma's endpoint, API key, and project ID.
 
-| Need | Read |
-|---|---|
-| Streaming | `/tracing/patterns/streaming.md` · Recipe: `/recipes/streaming-sse.md` |
-| Thread/conversation tracking | `/tracing/patterns/threads.md` |
-| Custom metadata | `/tracing/patterns/custom-attributes.md` |
-| Adding Lemma alongside existing OTel | `/tracing/patterns/dual-export.md` · Recipe: `/recipes/dual-export.md` |
+## Metadata
 
-## Recipes
+Use `lemma.thread_id` as Lemma's canonical conversation grouping key. Add it where the instrumentation accepts OpenTelemetry-style metadata.
 
-If the user's pattern matches one of these, start there before writing from scratch:
+By semantic convention, `gen_ai.agent.name` values should use `snake_case`, `CamelCase`, or `kebab-case`, such as `support_agent`, `SupportAgent`, or `support-agent`.
 
-| Recipe | Pattern |
-|---|---|
-| `https://docs.uselemma.ai/recipes/sync-agent.md` | Basic synchronous agent |
-| `https://docs.uselemma.ai/recipes/async-agent.md` | Basic async agent |
-| `https://docs.uselemma.ai/recipes/streaming-sse.md` | Streaming with SSE response |
-| `https://docs.uselemma.ai/recipes/tool-calling-agent.md` | Agent with tool calls |
-| `https://docs.uselemma.ai/recipes/multi-step-agent.md` | Multi-step / loop agent |
-| `https://docs.uselemma.ai/recipes/context-manager.md` | Python context manager form |
-| `https://docs.uselemma.ai/recipes/dual-export.md` | Existing OTel + Lemma side-by-side |
-| `https://docs.uselemma.ai/recipes/manual-instrumentation.md` | Full manual span control |
+For Vercel AI SDK:
+
+```typescript
+experimental_telemetry: {
+  isEnabled: true,
+  functionId: "support-agent",
+  metadata: {
+    "gen_ai.agent.name": "support-agent",
+    "lemma.thread_id": threadId,
+    "user.id": userId,
+    "session.id": sessionId,
+  },
+}
+```
+
+Use semantic convention keys for general metadata when possible: `user.id`, `session.id`, `deployment.environment.name`, `service.version`.
 
 ## Critical constraints
 
-Rules the docs mention that agents routinely miss:
+- Register startup instrumentation before app code emits spans or provider clients are instantiated.
+- In Next.js, put startup registration in root `instrumentation.ts` or `src/instrumentation.ts` and guard Node-only SDK setup with `process.env.NEXT_RUNTIME === "nodejs"`.
+- Use `@opentelemetry/exporter-trace-otlp-proto` for TypeScript HTTP/protobuf export. A JSON OTLP exporter can produce "invalid protobuf payload" errors.
+- Never expose `LEMMA_API_KEY` in client code or `NEXT_PUBLIC_*` env vars.
+- If another tracer provider already exists, add Lemma to it instead of replacing it.
+- For short-lived/serverless handlers, flush processors/exporters at request end when the runtime may freeze before batches export.
 
-- **Registration order:** `registerOTel()` / `register_otel()` must execute before any `agent()` call or provider client instantiation. In Next.js, place it inside `instrumentation.ts` → `register()`, guarded by `process.env.NEXT_RUNTIME === "nodejs"`.
-- **Streaming always pairs:** `{ streaming: true }` must always be paired with `ctx.complete(assembledText)` in the finish callback — and in the error path too. Missing either one leaves the span open indefinitely. → `/tracing/patterns/streaming.md`
-- **Vercel AI SDK — every call:** `experimental_telemetry: { isEnabled: true }` must appear on every `generateText` / `streamText` call. Missing it on even one call means that call produces no child spans. The root span appears but looks empty.
-- **OpenInference registration order:** Register all OpenInference instrumentors against the provider returned by `registerOTel()`, before instantiating any provider client.
-- **Thread IDs:** Pass at the call site as the second argument (`{ threadId: "..." }` in TS, `{"thread_id": "..."}` in Python). In context manager mode, set `run.span.set_attribute("lemma.thread_id", ...)` directly. → `/tracing/patterns/threads.md`
-- **`lemma.*` prefix:** Custom attributes intended to be filterable in the dashboard must use the `lemma.*` prefix (e.g. `lemma.user_id`, `lemma.environment`). → `/tracing/patterns/custom-attributes.md`
-- **Explicit return:** Always return a value from the wrapped function. Returning `undefined` / `None` = blank output field in the dashboard.
+## Troubleshooting
 
-## Known pitfalls
+Before suggesting fixes, check in this order:
 
-| Pitfall | Symptom | Fix |
-|---|---|---|
-| Missing `experimental_telemetry` on Vercel AI SDK calls | Root span appears, no child LLM spans | Add `experimental_telemetry: { isEnabled: true }` to every `generateText` / `streamText` call |
-| `messages.stream()` with AnthropicInstrumentation | `messages.create(...).withResponse is not a function` | Use `messages.create({ stream: true })` and consume the async iterable directly → `/tracing/patterns/streaming.md` |
-| `from litellm import acompletion` (direct import) | No child spans | Always call `litellm.acompletion(...)` on the module — never import the function directly |
-| Calling `registerOTel()` when a provider already exists | Existing processors discarded, other observability breaks | Use `createLemmaSpanProcessor()` and add to the existing provider → `/tracing/patterns/dual-export.md` |
-| `{ streaming: true }` without `ctx.complete()` | Span open indefinitely, trace never appears | Always pair `{ streaming: true }` with `ctx.complete(assembledText)` in all code paths → `/tracing/patterns/streaming.md` |
-| Returning `undefined` / `None` from wrapped function | Run appears with blank output | Always return the final result explicitly |
-| Registering OpenInference after client instantiation | No child spans — client holds unpatched reference | Register all instrumentors before creating any provider client |
-| Returning stream object instead of consuming it | Output field shows stream object, not text | Consume inside the wrapper; call `ctx.complete()` with the assembled text → `/tracing/patterns/streaming.md` |
+1. **No traces:** startup instrumentation ran before traffic; Lemma env vars are set; egress to the OTLP endpoint works.
+2. **Traces in source backend but not Lemma:** Lemma exporter is attached; headers include `Authorization` and `X-Lemma-Project-ID`; runtime logs show no exporter errors.
+3. **Missing child spans:** framework/provider instrumentation is enabled and registered before clients are created.
+4. **Invalid payload:** TypeScript uses `@opentelemetry/exporter-trace-otlp-proto`, and `LEMMA_OTLP_TRACES_URL` points at the full Lemma OTLP traces endpoint.
+5. **Delayed data:** batch processor may need `forceFlush()` in short-lived runtimes.
 
-## When things go wrong
-
-Before suggesting code changes, check in this order:
-
-1. **No traces at all:** Is `registerOTel()` called before agent code runs? Are `LEMMA_API_KEY` and `LEMMA_PROJECT_ID` set? Does the process stay alive long enough to flush (serverless)?
-2. **Traces but no child spans:** Is provider instrumentation registered? Registered against the correct provider (the one `registerOTel()` returned)? Are clients created after instrumentation?
-3. **Empty output:** Does the wrapped function return a value explicitly? For streaming: is `ctx.complete()` called?
-4. **Span never closes:** Is `ctx.complete()` called in both success and error paths?
-
-→ Detailed steps: `https://docs.uselemma.ai/tracing/troubleshooting/common-problems.md`
-
-**If the user has Lemma MCP connected**, query recent traces directly to confirm whether spans are arriving before suggesting any code changes. This is faster than adding debug logs.
-→ MCP setup: `https://docs.uselemma.ai/connections/mcp.md`
-
-**Enable debug mode** when the above checks don't resolve the issue — it logs every span start, end, and export event.
-→ `https://docs.uselemma.ai/tracing/troubleshooting/debug-mode.md`
+If Lemma MCP is connected, query recent traces directly before adding debug logs.
 
 ## Skill feedback
 
-If the skill gives incorrect guidance, references a page that doesn't exist, or is missing a scenario you encountered — offer to submit feedback. See [references/skill-feedback.md](references/skill-feedback.md) for the process.
-
-Do **not** trigger this for issues with Lemma itself (the product) — only for issues with this skill's instructions.
+If the skill gives incorrect guidance, references a page that does not exist, or misses a scenario, offer to submit feedback. See [references/skill-feedback.md](references/skill-feedback.md).

@@ -1,110 +1,139 @@
-# Vercel AI SDK — Integration Notes
+# Vercel AI SDK in Next.js
 
-Targets `@uselemma/tracing` >= 3.0.0.
+Use this reference only when the app uses Vercel AI SDK in Next.js.
 
-Docs: `https://docs.uselemma.ai/integrations/vercel-ai-sdk.md`
+## Decision path
 
----
+1. Check whether AI SDK calls already use `experimental_telemetry`.
+2. If yes, keep that instrumentation and add Lemma export.
+3. If no, enable AI SDK telemetry and use Langfuse as the instrumentation layer.
+4. Present a plan and ask for confirmation before editing.
 
-## Prefer the native AI SDK path
+Docs:
+- `https://docs.uselemma.ai/tracing/using-a-supported-framework.md`
+- `https://docs.uselemma.ai/tracing/patterns/otlp-export.md`
+- `https://docs.uselemma.ai/tracing/patterns/dual-export.md`
+- `https://langfuse.com/integrations/frameworks/vercel-ai-sdk`
 
-When the app already uses Vercel AI SDK, keep the AI SDK as the integration layer. Do not replace `generateText`, `streamText`, `generateObject`, or AI SDK-managed tools with Langfuse-style wrappers or provider-level instrumentation.
+## AI SDK telemetry
 
-Use AI SDK telemetry first:
-
-- Add `experimental_telemetry: { isEnabled: true }` to every AI SDK call.
-- Wrap the application-level agent/run boundary with `agent()` when a Lemma root span is needed.
-- Avoid OpenInference for the underlying OpenAI/Anthropic provider unless the app bypasses AI SDK and calls the provider SDK directly.
-
----
-
-## `experimental_telemetry` must be on every call
-
-This is the #1 missed step. Every single `generateText`, `streamText`, or `generateObject` call needs it. Miss it on one call inside a multi-step agent and that call produces no child spans — the root span appears but looks empty.
+Every `generateText`, `streamText`, or `generateObject` call that should appear in traces needs telemetry enabled:
 
 ```typescript
-// every AI SDK call, every time
-experimental_telemetry: { isEnabled: true }
+experimental_telemetry: {
+  isEnabled: true,
+  functionId: "support-agent",
+  metadata: {
+    "gen_ai.agent.name": "support-agent",
+    "lemma.thread_id": threadId,
+    "user.id": userId,
+    "session.id": sessionId,
+  },
+}
 ```
 
-AI SDK tool calls are also captured automatically when this flag is set — you do **not** need the `tool()` helper for AI SDK-managed tool calls.
+By semantic convention, `gen_ai.agent.name` values should use `snake_case`, `CamelCase`, or `kebab-case`, such as `support_agent`, `SupportAgent`, or `support-agent`.
 
----
+## Single export: Lemma only
 
-## `agent()` span is always the trace root
+Use this when Langfuse processes AI SDK spans but Lemma is the only trace destination.
 
-Looking at the source: `agent()` starts its span from `ROOT_CONTEXT`, not the current active context. This means:
+Install:
 
-- AI SDK spans nest **inside** the `agent()` span — the agent run is the root
-- Calling `agent()` **inside** another `agent()` creates two parallel trace roots, not a parent-child span. Don't nest `agent()` calls.
+```bash
+npm install @langfuse/otel @opentelemetry/exporter-trace-otlp-proto @opentelemetry/sdk-trace-node
+```
 
----
+Set env vars:
 
-## `onFinish` is where `ctx.complete()` belongs
+```bash
+LEMMA_OTLP_TRACES_URL=...
+LEMMA_API_KEY=...
+LEMMA_PROJECT_ID=...
+```
 
-For streaming with Vercel AI SDK, `streamText`'s `onFinish` callback fires once the full output is assembled — this is the canonical place to call `ctx.complete()`. The snippet below is the complete base pattern:
+In root `instrumentation.ts` or `src/instrumentation.ts`:
 
 ```typescript
-import { agent } from "@uselemma/tracing";
-import { streamText } from "ai";
-import { openai } from "@ai-sdk/openai";
+export async function register() {
+  if (process.env.NEXT_RUNTIME === "nodejs") {
+    const { LangfuseSpanProcessor } = await import("@langfuse/otel");
+    const { OTLPTraceExporter } = await import(
+      "@opentelemetry/exporter-trace-otlp-proto"
+    );
+    const { NodeTracerProvider } = await import(
+      "@opentelemetry/sdk-trace-node"
+    );
 
-const myAgent = agent(
-  "my-agent",
-  async (input: string, ctx) => {
-    return await streamText({
-      model: openai("gpt-4o"),
-      messages: [{ role: "user", content: input }],
-      experimental_telemetry: { isEnabled: true },
-      onFinish({ text }) {
-        ctx.complete(text); // records output, closes the run span
+    const provider = new NodeTracerProvider({
+      spanProcessors: [
+        new LangfuseSpanProcessor({
+          exporter: new OTLPTraceExporter({
+            url: process.env.LEMMA_OTLP_TRACES_URL,
+            headers: {
+              Authorization: `Bearer ${process.env.LEMMA_API_KEY}`,
+              "X-Lemma-Project-ID": process.env.LEMMA_PROJECT_ID,
+            },
+          }),
+        }),
+      ],
+    });
+
+    provider.register();
+  }
+}
+```
+
+`LANGFUSE_*` variables are not required for this mode.
+
+## Dual export: Langfuse and Lemma
+
+Use this when traces should be stored in both Langfuse and Lemma.
+
+Set Lemma env vars plus:
+
+```bash
+LANGFUSE_PUBLIC_KEY=...
+LANGFUSE_SECRET_KEY=...
+LANGFUSE_BASE_URL=https://cloud.langfuse.com
+```
+
+In root `instrumentation.ts` or `src/instrumentation.ts`:
+
+```typescript
+export async function register() {
+  if (process.env.NEXT_RUNTIME === "nodejs") {
+    const { LangfuseSpanProcessor } = await import("@langfuse/otel");
+    const { OTLPTraceExporter } = await import(
+      "@opentelemetry/exporter-trace-otlp-proto"
+    );
+    const { NodeTracerProvider } = await import(
+      "@opentelemetry/sdk-trace-node"
+    );
+
+    const lemmaExporter = new OTLPTraceExporter({
+      url: process.env.LEMMA_OTLP_TRACES_URL,
+      headers: {
+        Authorization: `Bearer ${process.env.LEMMA_API_KEY}`,
+        "X-Lemma-Project-ID": process.env.LEMMA_PROJECT_ID,
       },
     });
-  },
-  { streaming: true }
-);
+
+    const provider = new NodeTracerProvider({
+      spanProcessors: [
+        new LangfuseSpanProcessor(),
+        new LangfuseSpanProcessor({ exporter: lemmaExporter }),
+      ],
+    });
+
+    provider.register();
+  }
+}
 ```
 
-Avoid calling `ctx.complete()` inside a `for await` loop over the stream — `onFinish` fires after the loop ends, so calling it mid-loop closes the span before the output is fully assembled.
+## Constraints
 
----
-
-## `instrumentation.ts` location
-
-Must be at the **project root** — the same level as `package.json`. If using a `src/` directory layout, place it at `src/instrumentation.ts`.
-
-The `register()` function is called **twice** in development (once for `edge`, once for `nodejs`). Without the `NEXT_RUNTIME === "nodejs"` guard, `registerOTel()` runs in the edge runtime where the Node.js OTel SDK is not supported and will throw.
-
----
-
-## `ctx.complete()` is optional in non-streaming mode
-
-In non-streaming mode, the wrapper calls `complete(result)` automatically after your function returns — it uses whatever value the function returned as `ai.agent.output` and then closes the span. You never need to call it yourself unless you want to override one of those two behaviors:
-
-**Override the recorded output** — call `ctx.complete(differentValue)` before returning when the return value isn't what you want to appear as the run output. For example, if your function returns a complex object but you only want to record the text field:
-
-```typescript
-import { agent } from "@uselemma/tracing";
-import { generateText } from "ai";
-import { openai } from "@ai-sdk/openai";
-
-const myAgent = agent("my-agent", async (input: string, ctx) => {
-  const response = await generateText({
-    model: openai("gpt-4o"),
-    messages: [{ role: "user", content: input }],
-    experimental_telemetry: { isEnabled: true },
-  });
-  // ctx.complete(response.text);
-  return response;             // caller still gets the full response object
-});
-```
-
-**Close the span early** — call `ctx.complete()` mid-function when you want the trace to end before the function exits. Useful when the "real" work finishes before cleanup code runs and you don't want the cleanup time attributed to the run.
-
-`complete()` is idempotent — the first call wins, all subsequent calls are no-ops. So calling it explicitly and then returning normally is safe; the auto-close at the end just becomes a no-op.
-
----
-
-## Env vars must not be `NEXT_PUBLIC_`
-
-`LEMMA_API_KEY` and `LEMMA_PROJECT_ID` are server-only secrets. Never prefix them with `NEXT_PUBLIC_` — that would embed them in the client bundle.
+- Guard Node OpenTelemetry setup with `process.env.NEXT_RUNTIME === "nodejs"`.
+- Never expose `LEMMA_API_KEY` through `NEXT_PUBLIC_*`.
+- Use `@opentelemetry/exporter-trace-otlp-proto`; Lemma expects protobuf payloads.
+- If the app already has a tracer provider, add processors/exporters to that provider instead of replacing it.

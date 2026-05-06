@@ -6,6 +6,18 @@ Docs: `https://docs.uselemma.ai/integrations/vercel-ai-sdk.md`
 
 ---
 
+## Prefer the native AI SDK path
+
+When the app already uses Vercel AI SDK, keep the AI SDK as the integration layer. Do not replace `generateText`, `streamText`, `generateObject`, or AI SDK-managed tools with Langfuse-style wrappers or provider-level instrumentation.
+
+Use AI SDK telemetry first:
+
+- Add `experimental_telemetry: { isEnabled: true }` to every AI SDK call.
+- Wrap the application-level agent/run boundary with `agent()` when a Lemma root span is needed.
+- Avoid OpenInference for the underlying OpenAI/Anthropic provider unless the app bypasses AI SDK and calls the provider SDK directly.
+
+---
+
 ## `experimental_telemetry` must be on every call
 
 This is the #1 missed step. Every single `generateText`, `streamText`, or `generateObject` call needs it. Miss it on one call inside a multi-step agent and that call produces no child spans — the root span appears but looks empty.

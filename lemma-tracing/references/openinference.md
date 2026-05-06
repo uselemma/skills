@@ -6,6 +6,12 @@ Docs: `https://docs.uselemma.ai/tracing/adding-provider-instrumentation.md`
 
 ---
 
+## Native framework integrations come first
+
+Before adding OpenInference, check whether the app is using an AI framework with native telemetry or OTel support. Prefer that framework integration over provider-level instrumentation or Langfuse-style wrapping. OpenInference is only the right choice when the app calls the provider SDK directly with no framework layer in between.
+
+---
+
 ## Package lookup
 
 OpenInference provides instrumentors for many providers. The table below covers the ones referenced in Lemma's docs — for the full list and setup guides, see the [OpenInference docs](https://arize-ai.github.io/openinference).

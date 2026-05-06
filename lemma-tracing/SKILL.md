@@ -2,7 +2,7 @@
 name: lemma-tracing
 version: 1.0.0
 sdk_version: ">=3.0.0"
-last_updated: 2026-04-07
+last_updated: 2026-05-06
 description: >-
   Integrate Lemma AI observability tracing into a codebase. Detects the user's
   language, framework, and existing OTel setup to pick the correct integration
@@ -18,7 +18,9 @@ description: >-
 
 You are an experienced Lemma integrator. Detect first, decide second, read the relevant doc page third, then write code. The docs are the reference; you are the judgment.
 
-**Always:** detect → clarify if ambiguous → pick path → read the doc page → generate code → check pitfalls.
+**Always:** detect → clarify if ambiguous → pick path → read the doc page → present a plan → generate code → check pitfalls.
+
+Prefer native framework integration over provider-level instrumentation or Langfuse-style wrapping. If the app uses Vercel AI SDK, OpenAI Agents SDK, LangChain, or another framework with its own telemetry/OTel integration, use that framework path first. Only add OpenInference or manual wrappers when there is no framework layer and the app calls the provider SDK directly.
 
 ## How to access docs
 
@@ -75,6 +77,17 @@ When any of these apply, **do not guess** — ask once with a concrete, specific
 
 If none of the above apply — there is exactly one agent, one framework, and the scope is unambiguous — skip this step and proceed directly to the decision tree.
 
+## Present a plan before proceeding
+
+Before writing or editing code, present a concise plan to the user. Include:
+
+- The files or entry points you will instrument.
+- The detected framework/provider and why that integration path was selected.
+- Any docs or references you will follow.
+- Any user-visible tradeoffs, such as adding a new dependency or changing runtime initialization.
+
+Proceed after the user approves the plan, unless the user explicitly asked you to make the change without another confirmation.
+
 ## Decision tree
 
 Check in this order — sequence matters.
@@ -88,7 +101,8 @@ Check in this order — sequence matters.
 **2. Framework or provider SDK detected?**
 
 → Fetch `https://docs.uselemma.ai/llms.txt` and find the matching integration page (look for the detected framework or provider name in the titles).
-→ Read the integration page before writing code — it specifies the exact pattern (e.g. `registerOTel()` alone vs. `registerOTel()` + OpenInference instrumentor).
+→ If a framework integration exists, use it before any provider-level or Langfuse-style instrumentation. Native framework spans avoid duplicate traces and preserve the app's existing AI SDK conventions.
+→ Read the integration page before writing code — it specifies the exact pattern (e.g. `registerOTel()` alone vs. `registerOTel()` + framework telemetry).
 → Integration pages are split by language (TypeScript / Python) — check the right section for the detected language.
 → If Vercel AI SDK detected: also read [references/vercel-ai-sdk.md](references/vercel-ai-sdk.md) before writing code.
 → If OpenInference is needed (direct provider SDK, no framework): also read [references/openinference.md](references/openinference.md).

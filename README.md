@@ -6,7 +6,7 @@
 
 | Skill | Description |
 |---|---|
-| [`lemma-tracing`](./lemma-tracing/SKILL.md) | Integrate Lemma tracing into any codebase — detects existing OpenTelemetry instrumentation, adds Langfuse instrumentation when needed, and configures OpenTelemetry export to Lemma |
+| [`lemma-tracing`](./lemma-tracing/SKILL.md) | Integrate Lemma tracing into any codebase — supports the direct SDK, Vercel AI SDK v6/v7, OpenAI Agents SDK, LangChain, LangGraph, Langfuse side-by-side installs, trace handles, debug mode, and manual instrumentation |
 
 ## Installation
 
@@ -41,8 +41,8 @@ npx skills add uselemma/skills --skill "lemma-tracing" --target claude
 Once installed, the agent will automatically use these skills when relevant — for example:
 
 - Adding Lemma tracing to a new or existing project
-- Choosing the right path (keep existing OTel instrumentation or add Langfuse instrumentation)
-- Configuring Lemma as an OTLP trace export destination
+- Choosing the right path for Vercel AI SDK, OpenAI Agents SDK, LangChain, LangGraph, or manual SDK tracing
+- Adding Lemma tracing alongside existing Langfuse or OpenTelemetry instrumentation
 - Debugging instrumentation issues
 
 ## Versioning

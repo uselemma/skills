@@ -82,10 +82,6 @@ const answer = await lemma.trace(
       model: response.model,
       input: response.messages,
       output: response.text,
-      usage: {
-        inputTokens: response.usage.inputTokens,
-        outputTokens: response.usage.outputTokens,
-      },
     });
 
     return response.text;
@@ -110,10 +106,6 @@ def run(trace):
         model=response.model,
         input=response.messages,
         output=response.text,
-        usage={
-            "input_tokens": response.usage.input_tokens,
-            "output_tokens": response.usage.output_tokens,
-        },
     )
     return response.text
 
@@ -159,7 +151,6 @@ trace.recordGeneration({
   model: response.model,
   input: response.messages,
   output: response.text,
-  usage: response.usage,
 });
 
 await trace.end({ output: response.text });
@@ -226,12 +217,12 @@ Detached child records require `traceId`. Pass `parentSpanId` when the record be
 
 Prefer SDK props over hand-built attribute names:
 
-- Generation: `model`, `usage`, `llmInputMessages`, `llmOutputMessages`, `llmTools`, `llmInvocationParameters`, `llmPromptTemplate`, `llmPromptTemplateVariables`.
+- Generation: `model`, `llmInputMessages`, `llmOutputMessages`, `llmTools`, `llmInvocationParameters`, `llmPromptTemplate`, `llmPromptTemplateVariables`.
 - Tool: `toolDescription`, `toolParameters`.
-- Retrieval/span: `retrievalDocuments`, `embeddingModelName`, `embeddingInvocationParameters`, `rerankerInputDocuments`, `rerankerOutputDocuments`.
+- Span: `embeddingModelName`, `embeddingInvocationParameters`, `rerankerInputDocuments`, `rerankerOutputDocuments`.
 - Shared: `inputMimeType`, `outputMimeType`, `attributes`.
 
-Python uses snake_case versions, for example `llm_input_messages`, `tool_parameters`, and `retrieval_documents`.
+Python uses snake_case versions, for example `llm_input_messages` and `tool_parameters`.
 
 ## Debug Checklist
 

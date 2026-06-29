@@ -3,8 +3,9 @@ name: lemma-tracing
 description: >-
   Integrate Lemma AI observability tracing into a codebase. Use when adding
   Lemma tracing, fixing missing or malformed traces, adding tool calls,
-  generations, trace handles, thread/user context, Vercel AI SDK integration,
-  or debugging Lemma trace delivery and trace shape.
+  generations, trace handles, thread/user context, Vercel AI SDK, OpenAI
+  Agents SDK, LangChain, LangGraph, Langfuse side-by-side installs, or
+  debugging Lemma trace delivery and trace shape.
 ---
 
 # Lemma Tracing
@@ -25,7 +26,7 @@ Work in this order:
 
 Every integration must satisfy this product contract:
 
-- One agent execution becomes one `lemma.trace(...)` root trace.
+- One agent execution becomes one Lemma root trace.
 - The root trace has a stable `name`, user input, final output or error, and `threadId` / `userId` when available.
 - LLM calls are generation children: `recordGeneration(...)` / `record_generation(...)` or `startGeneration(...)` / `start_generation(...)`.
 - Tool invocations are tool children: `recordTool(...)` / `record_tool(...)` or `startTool(...)` / `start_tool(...)`.
@@ -40,7 +41,10 @@ If the app cannot produce this shape at the exact call site, pass IDs and record
 | --- | --- |
 | New or manually instrumented TypeScript app | Use `@uselemma/tracing` directly. See [references/direct-sdk.md](references/direct-sdk.md). |
 | New or manually instrumented Python app | Use `uselemma-tracing` directly. See [references/direct-sdk.md](references/direct-sdk.md). |
-| Vercel AI SDK v7 or v6 | Wrap the run in `lemma.trace(...)` and use `vercelAI()`. See [references/vercel-ai-sdk.md](references/vercel-ai-sdk.md). |
+| Vercel AI SDK v7 or v6 | Use `vercelAI()` in AI SDK telemetry and let it create/finalize the Lemma trace. Do not wrap normal AI SDK runs in `lemma.trace(...)`. See [references/vercel-ai-sdk.md](references/vercel-ai-sdk.md). |
+| OpenAI Agents SDK | Use the built-in Lemma OpenAI Agents integration. Do not wrap normal agent runs in `lemma.trace(...)`; the processor/instrumentor creates the Lemma trace from Agents SDK events. |
+| LangChain | Use the built-in Lemma LangChain callback handler. |
+| LangGraph | Use the built-in Lemma LangGraph callback handler; it follows LangChain callback semantics with LangGraph defaults. |
 | Streaming or callbacks where one function does not own the whole run | In TypeScript, use a trace handle and call/await `trace.end(...)` from the terminal callback or finalization path. In Python, prefer a callback trace around the owned run and record `start_*` handles inside that callback. |
 | App already has Langfuse | Keep Langfuse only if the customer still needs it, and add Lemma SDK tracing alongside it. Langfuse instrumentation is not sufficient for Lemma because it usually does not produce the Lemma trace contract. Do not route new Lemma work through Langfuse. |
 | Existing OpenTelemetry only | Do not tear it out. Keep it if the user needs it, but use the Lemma SDK for the product trace contract unless the user explicitly asks for OTel export compatibility work. |
@@ -61,6 +65,9 @@ Use docs in this order:
    - Spans: `https://docs.uselemma.ai/tracing/instrumentation/spans.md`
    - Context: `https://docs.uselemma.ai/tracing/instrumentation/context.md`
    - Vercel AI SDK: `https://docs.uselemma.ai/integrations/vercel-ai.md`
+   - OpenAI Agents SDK: `https://docs.uselemma.ai/integrations/openai-agents.md`
+   - LangChain: `https://docs.uselemma.ai/integrations/langchain.md`
+   - LangGraph: `https://docs.uselemma.ai/integrations/langgraph.md`
    - Trace contract: `https://docs.uselemma.ai/reference/trace-contract.md`
    - Troubleshooting: `https://docs.uselemma.ai/tracing/troubleshooting/common-issues.md`
    - Debug mode: `https://docs.uselemma.ai/tracing/troubleshooting/debug-mode.md`
@@ -76,7 +83,10 @@ Inspect imports, startup files, agent handlers, and model/tool call sites:
 | Lemma SDK already present | `@uselemma/tracing`, `uselemma_tracing`, `Lemma`, `vercelAI`, `lemma.trace` |
 | Agent boundary | request handler, job processor, CLI command, workflow step, streaming route |
 | Vercel AI SDK | `generateText`, `streamText`, `generateObject`, `tool`, `telemetry`, `experimental_telemetry` from `ai` |
-| Model call | `openai`, `anthropic`, provider adapters, AI SDK model usage |
+| OpenAI Agents SDK | `@openai/agents`, `openai-agents`, `Agent`, `Runner`, `run`, `addTraceProcessor` |
+| LangChain | `langchain`, `@langchain/*`, `ChatOpenAI`, chains, callbacks |
+| LangGraph | `langgraph`, `@langchain/langgraph`, graph `invoke`/`stream`, callbacks |
+| Model call | `openai`, `anthropic`, provider adapters, AI SDK model calls |
 | Tool call | functions passed as tools, MCP calls, retrieval/search/order/payment helpers |
 | Trace finalization | callback return, `onEnd`, `onFinish`, SSE close, queue completion, background job completion |
 | Existing tracing | Langfuse, OpenTelemetry, OpenInference, Arize/Phoenix, Braintrust |
@@ -91,10 +101,11 @@ Ask one focused clarification question only when the agent boundary or finalizat
 - Use callback traces when one function owns the whole run.
 - In TypeScript, use trace handles when the run is coordinated across callbacks, streaming, or helpers; do not set final duration until `trace.end(...)`.
 - In Python, use callback traces as the root boundary and use `start_span`, `start_tool`, and `start_generation` on the active trace context for work in progress.
+- For Vercel AI SDK and OpenAI Agents SDK, do not wrap normal runs in `lemma.trace(...)`; use the integration so it creates and closes the trace from framework lifecycle events.
 - Record completed work with `recordSpan`, `recordTool`, and `recordGeneration`.
 - Use `startSpan`, `startTool`, and `startGeneration` when you need a handle before the work finishes.
 - Use `traceId` and `parentSpanId` for detached recording by ID.
-- Prefer native contract props such as `toolParameters`, `retrievalDocuments`, `llmInputMessages`, `llmInvocationParameters`, `model`, and `usage`; use raw `attributes` only as an escape hatch.
+- Prefer native contract props such as `toolParameters`, `llmInputMessages`, `llmInvocationParameters`, and `model`; use raw `attributes` only as an escape hatch.
 - Redact secrets and sensitive payloads before recording inputs or outputs.
 
 ## Debugging
@@ -150,7 +161,7 @@ Validation checklist before considering an integration complete:
 - Root trace has a stable `name`.
 - Root trace records the user input.
 - Root trace records the final output or error.
-- LLM calls are typed generation children with `model` and `usage` when available.
+- LLM calls are typed generation children with `model`, input/messages, and output text when available.
 - Tool calls are typed tool children with input arguments and output/error.
 - App work is recorded as spans, nested under the correct parent when relevant.
 - Related conversation turns share `threadId` / `thread_id`.

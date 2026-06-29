@@ -122,7 +122,7 @@ Interpret the logs:
 | A child span appears as its own trace | The child was recorded outside the active root trace, or a helper created a new trace | Move the child recording inside `lemma.trace(...)`, pass the trace/span handle, or pass `traceId` and `parentSpanId` to detached helpers |
 | A span is present but root-level instead of nested | The record call did not use the parent span handle and no `parentSpanId` was provided | Call `parent.recordTool(...)`, `parent.recordGeneration(...)`, or `parent.recordSpan(...)`; for detached helpers, pass `parentSpanId` |
 | Expected span is absent and `spanCount` is too low | The recording code did not run, ran after the trace ended, or ran in a different async context | Add a temporary app log next to the recording call, keep it inside the trace callback, or end/flush only after child work completes |
-| Debug logs show the span, but dashboard shape is still wrong | The span type or contract fields are wrong | Use typed helpers: `recordTool`, `recordGeneration`, `recordSpan`; include native fields like `model`, `usage`, `toolParameters`, and `retrievalDocuments` |
+| Debug logs show the span, but dashboard shape is still wrong | The span type or contract fields are wrong | Use typed helpers: `recordTool`, `recordGeneration`, `recordSpan`; include native fields like `model`, `input`, `output`, and `toolParameters` |
 
 Correct nested handle pattern:
 
@@ -195,16 +195,16 @@ retrieve.recordTool({ name: "search_docs", input: { query }, output: docs });
 retrieve.end({ output: { count: docs.length } });
 ```
 
-## Debug Missing Generations or Tokens
+## Debug Missing Generations or Content
 
-Symptom: the trace exists, but model name, prompt/completion, or token counts are missing.
+Symptom: the trace exists, but model name, prompt/completion, or output text is missing.
 
 Use debug mode like this:
 
 1. Confirm the model call path runs before `sending trace`.
 2. Check whether `spanCount` / `span_count` increases for the model call.
 3. If it does not increase, add `recordGeneration(...)` / `record_generation(...)` or the Vercel AI `vercelAI()` integration.
-4. If it increases but metadata is absent, include `model` and `usage`, or use native props such as `llmInputMessages` / `llm_input_messages`.
+4. If it increases but metadata is absent, include `model`, `input`, and `output`, or use native props such as `llmInputMessages` / `llm_input_messages`.
 
 Correct shape:
 
@@ -214,10 +214,6 @@ trace.recordGeneration({
   model: response.model,
   input: messages,
   output: response.text,
-  usage: {
-    inputTokens: response.usage.inputTokens,
-    outputTokens: response.usage.outputTokens,
-  },
 });
 ```
 
@@ -279,7 +275,7 @@ After delivery works, debug mode has done its job. Finish by checking the trace 
 
 - One root trace for one agent execution.
 - Root has stable `name`, input, output or error, `threadId` / `userId` when available.
-- LLM calls are typed generations with model and usage when available.
+- LLM calls are typed generations with model, input/messages, and output text when available.
 - Tool calls are typed tools with arguments and results.
 - App work is spans, nested under the correct parent when relevant.
 - `spanCount` / `span_count` roughly matches the number of child records expected.

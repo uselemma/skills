@@ -42,7 +42,7 @@ If the app cannot produce this shape at the exact call site, pass IDs and record
 | New or manually instrumented Python app | Use `uselemma-tracing` directly. See [references/direct-sdk.md](references/direct-sdk.md). |
 | Vercel AI SDK v7 or v6 | Wrap the run in `lemma.trace(...)` and use `vercelAI()`. See [references/vercel-ai-sdk.md](references/vercel-ai-sdk.md). |
 | Streaming or callbacks where one function does not own the whole run | In TypeScript, use a trace handle and call/await `trace.end(...)` from the terminal callback or finalization path. In Python, prefer a callback trace around the owned run and record `start_*` handles inside that callback. |
-| Existing Langfuse customers | Preserve their Langfuse setup for backwards compatibility when needed, but add Lemma SDK tracing for the Lemma contract. Do not tell new greenfield users to instrument with Langfuse first. |
+| App already has Langfuse | Keep Langfuse only if the customer still needs it, and add Lemma SDK tracing alongside it. Langfuse instrumentation is not sufficient for Lemma because it usually does not produce the Lemma trace contract. Do not route new Lemma work through Langfuse. |
 | Existing OpenTelemetry only | Do not tear it out. Keep it if the user needs it, but use the Lemma SDK for the product trace contract unless the user explicitly asks for OTel export compatibility work. |
 
 ## Docs

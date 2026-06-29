@@ -10,7 +10,7 @@ Use this reference when the app uses Vercel AI SDK v7 or v6.
 4. For streaming or externally finalized work, pass a trace handle to `vercelAI({ trace })`.
 5. Verify with debug mode and a real AI SDK call.
 
-Do not use Langfuse as the default integration layer for new Lemma work. Preserve existing Langfuse instrumentation only when the customer already depends on it.
+Do not use Langfuse as the integration layer for Lemma work. If the app already has Langfuse, keep it only if the customer still needs Langfuse data, and add Lemma SDK tracing alongside it. Langfuse instrumentation alone is not sufficient for Lemma because it usually does not produce the Lemma trace contract.
 
 Docs:
 

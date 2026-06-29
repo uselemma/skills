@@ -143,7 +143,20 @@ Use the strongest available evidence:
 - Type-check and run focused tests for changed code.
 - Run a smoke trace from the same runtime that handles real traffic.
 - With debug mode enabled, confirm `trace sent` and the expected child count.
-- Verify the dashboard trace has one root, input/output, generation children, tool children, and thread/user context when expected.
+
+Validation checklist before considering an integration complete:
+
+- One trace per agent run: one root trace, not sibling traces per model/tool call.
+- Root trace has a stable `name`.
+- Root trace records the user input.
+- Root trace records the final output or error.
+- LLM calls are typed generation children with `model` and `usage` when available.
+- Tool calls are typed tool children with input arguments and output/error.
+- App work is recorded as spans, nested under the correct parent when relevant.
+- Related conversation turns share `threadId` / `thread_id`.
+- TypeScript trace handles are ended or flushed from the terminal callback, `finally` block, or job completion path.
+- Debug logs show `trace sent` and a final `spanCount` / `span_count` that matches the expected child records.
+- The dashboard trace shape matches the code path: root, generations, tools, spans, parent/child nesting, and thread/user context when expected.
 
 ## Skill Feedback
 

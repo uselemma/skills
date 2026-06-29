@@ -99,7 +99,7 @@ Ask one focused clarification question only when the agent boundary or finalizat
 
 ## Debugging
 
-Use debug mode whenever traces are missing, delayed, split into separate roots, missing tools/generations, or have blank input/output. For the full diagnostic workflow, read [references/debug-mode.md](references/debug-mode.md).
+Use debug mode whenever traces are missing, delayed, split into separate roots, individual spans show up as separate traces, spans are not nested under the expected parent, trace children are missing, tools/generations are missing, or input/output is blank. For the full diagnostic workflow, read [references/debug-mode.md](references/debug-mode.md).
 
 Enable it before creating the client:
 
@@ -124,13 +124,16 @@ Expected successful sequence:
 [LEMMA:client] trace sent
 ```
 
-For trace handles, expect `trace handle created`, then `sending trace` when the handle flushes or ends. Use the `spanCount` (`span_count` in Python) on `sending trace` to confirm children are actually included.
+For trace handles, expect `trace handle created`, span-level debug logs as each handle starts/ends, then `sending trace` when the handle flushes or ends. Use the `spanCount` (`span_count` in Python) on `sending trace` to confirm children are actually included.
 
 Common reads:
 
 - No Lemma logs: debug mode is not enabled in the running process, or the traced path is not executing.
 - `trace started` but no `sending trace`: callback did not finish, or a handle was never flushed/ended.
 - `sending trace` then `trace ingest failed`: check credentials, project ID, `baseUrl`, status code, and network policy.
+- Individual spans show up as traces: the child work is being recorded outside the root trace context; move it inside the callback or pass `traceId` / `parentSpanId`.
+- Spans are not nested properly: record nested work on the parent span handle or pass the correct `parentSpanId` to detached helpers.
+- Trace is missing spans: compare expected children to debug `span started` / `span ended` / `span recorded` logs and the final `spanCount`.
 - `trace sent` but dashboard shape is wrong: compare the trace against the contract and record missing children with typed helpers.
 
 ## Verification

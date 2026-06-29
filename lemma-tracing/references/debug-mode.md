@@ -1,14 +1,15 @@
 # Debug Mode
 
-Use this reference when a Lemma trace is missing, delayed, split into separate traces, missing child spans, missing tool/generation data, or has blank input/output.
+Use this reference when a Lemma trace is missing, delayed, split into separate traces, individual spans show up as traces, spans are not nested properly, child spans are missing, tool/generation data is missing, or input/output is blank.
 
 Debug mode is not just a switch to turn on. Use it to answer a sequence of questions:
 
 1. Did the process that handles traffic create a trace?
 2. Did the SDK try to send the completed payload?
 3. Did ingest accept or reject it?
-4. Did the payload include the children the user expected?
-5. If delivery worked, does the trace shape match the contract?
+4. Did the payload include the child spans the user expected?
+5. Are child spans attached to the correct parent?
+6. If delivery worked, does the trace shape match the contract?
 
 ## Enable It
 
@@ -82,7 +83,7 @@ If the smoke trace succeeds but the real agent does not, credentials and network
 | `trace started`, but no `sending trace` | The callback did not finish, threw before flush, or an open handle was not ended/flushed | Await `lemma.trace(...)`; call and await `trace.end(...)`; inspect thrown errors and finalization callbacks |
 | `trace handle created`, but no `sending trace` | A TypeScript handle exists but never reaches terminal finalization | End it from the final callback, stream terminal event, queue completion, or `finally` block |
 | `sending trace`, then `trace ingest failed` | The SDK reached Lemma, but ingest rejected the request | Check status, response body, API key, project ID, `baseUrl`, and network policy |
-| `trace sent`, but dashboard is wrong | Delivery worked; the payload shape is wrong or incomplete | Compare child count and contract fields, then fix recording calls |
+| `trace sent`, but dashboard is wrong | Delivery worked; the payload shape is wrong or incomplete | Compare child count, parent IDs, and contract fields, then fix recording calls |
 
 ## Debug Missing Traces
 
@@ -95,6 +96,60 @@ If the smoke trace succeeds but the real agent does not, credentials and network
    - Network/DNS errors: egress or runtime network policy.
 4. If `trace sent` appears but no dashboard trace appears, confirm the project ID and dashboard project match.
 
+## Debug Span Shape Problems
+
+Use this section first when the dashboard shows any of these:
+
+- individual spans showing up as separate traces
+- spans missing from the expected trace
+- spans nested under the wrong parent
+- tools or generations appearing as root-level siblings when they should be children
+- a trace that has fewer children than the code path should produce
+
+Debug mode is especially useful here because it logs span lifecycle events as
+they happen, not only at final trace send time.
+
+Run the real code path with debug mode enabled and compare:
+
+1. The number of `span started`, `span ended`, and `span recorded` logs.
+2. The `parentId` / `parent_id` shown in each span summary.
+3. The final `spanCount` / `span_count` in the `sending trace` log.
+
+Interpret the logs:
+
+| Symptom | Likely cause | Fix |
+| --- | --- | --- |
+| A child span appears as its own trace | The child was recorded outside the active root trace, or a helper created a new trace | Move the child recording inside `lemma.trace(...)`, pass the trace/span handle, or pass `traceId` and `parentSpanId` to detached helpers |
+| A span is present but root-level instead of nested | The record call did not use the parent span handle and no `parentSpanId` was provided | Call `parent.recordTool(...)`, `parent.recordGeneration(...)`, or `parent.recordSpan(...)`; for detached helpers, pass `parentSpanId` |
+| Expected span is absent and `spanCount` is too low | The recording code did not run, ran after the trace ended, or ran in a different async context | Add a temporary app log next to the recording call, keep it inside the trace callback, or end/flush only after child work completes |
+| Debug logs show the span, but dashboard shape is still wrong | The span type or contract fields are wrong | Use typed helpers: `recordTool`, `recordGeneration`, `recordSpan`; include native fields like `model`, `usage`, `toolParameters`, and `retrievalDocuments` |
+
+Correct nested handle pattern:
+
+```typescript
+const retrieve = trace.startSpan({ name: "retrieve-context" });
+const docs = await searchDocs(query);
+retrieve.recordTool({ name: "search_docs", input: { query }, output: docs });
+retrieve.end({ output: { count: docs.length } });
+```
+
+Correct detached pattern:
+
+```typescript
+const retrieve = lemma.startSpan({
+  traceId: trace.id,
+  name: "retrieve-context",
+});
+
+lemma.recordTool({
+  traceId: trace.id,
+  parentSpanId: retrieve.id,
+  name: "search_docs",
+  input: { query },
+  output: docs,
+});
+```
+
 ## Debug Split Traces or Lost Context
 
 Symptom: each model/tool call appears as its own trace, or child work is missing from the root.
@@ -104,7 +159,8 @@ Use debug mode like this:
 1. Confirm the real request logs one root `trace started` or `trace handle created`.
 2. Confirm `sending trace` happens after the child work ran.
 3. Check `spanCount` (`span_count` in Python). If the count is too low, the child recording code did not execute inside the active trace.
-4. Move `recordTool(...)`, `recordGeneration(...)`, and `recordSpan(...)` inside the `lemma.trace(...)` callback, or pass `traceId` / `parentSpanId` to detached helpers.
+4. Check each span summary's `parentId` / `parent_id`. A missing parent ID means the span will be root-level inside the trace.
+5. Move `recordTool(...)`, `recordGeneration(...)`, and `recordSpan(...)` inside the `lemma.trace(...)` callback, record from the parent span handle, or pass `traceId` / `parentSpanId` to detached helpers.
 
 For TypeScript handles, make sure helpers receive the handle or IDs from the same root trace. For Python, keep the callback trace as the root boundary and record children on the callback trace context.
 
